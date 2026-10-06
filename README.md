@@ -199,6 +199,60 @@ If your tokens include the `amr` claim, you can also set the app setting `ADMIN_
 | `SITE_URL` | Links in emails |
 | `RATE_LIMIT_SALT` | Key Vault reference. Salt for hashing IPs |
 
+## Logs and troubleshooting
+
+All logs go to the Log Analytics workspace **`log-gfm-…`**. To open it: Azure portal → resource group `rg-goformosaic-prod` → the Log Analytics workspace → **Logs**. Switch the editor to *KQL mode* and paste one of the queries below. New logs take 2–5 minutes to appear.
+
+| What happened | Where it's logged |
+|---|---|
+| Every request to the site/API, with status code | `AppServiceHTTPLogs` |
+| Server errors, upload rejections (`[upload-rejected]`), browser upload failures (`[client-upload-error]`) | `AppServiceConsoleLogs` |
+| Photo compression and retention job | `FunctionAppLogs` |
+| Direct browser → storage uploads (succeeded or failed) | `StorageBlobLogs` |
+
+**Upload problems in the last 24 hours (browser and server side):**
+```kusto
+AppServiceConsoleLogs
+| where TimeGenerated > ago(24h)
+| where ResultDescription has_any ("client-upload-error", "upload-rejected", "upload-missing", "Error")
+| project TimeGenerated, ResultDescription
+| order by TimeGenerated desc
+```
+Each `[client-upload-error]` line records:
+- the **stage**: `register`, `upload` (the browser → storage step) or `verify`;
+- the **error message** the customer saw;
+- the **file size and type**;
+- the **attempt number**;
+- **whether the browser thought it was online**.
+
+**Failed API requests:**
+```kusto
+AppServiceHTTPLogs
+| where TimeGenerated > ago(24h) and ScStatus >= 400
+| summarize count() by CsUriStem, ScStatus
+| order by count_ desc
+```
+
+**Failed uploads at the storage level** (CORS, expired SAS, authorization):
+```kusto
+StorageBlobLogs
+| where TimeGenerated > ago(24h) and OperationName == "PutBlob" and StatusCode >= 400
+| project TimeGenerated, StatusCode, StatusText, CallerIpAddress, Uri
+```
+
+**Compression results and failures:**
+```kusto
+FunctionAppLogs
+| where TimeGenerated > ago(24h) and FunctionName == "processImage"
+| where Message has_any ("Processed", "failed")
+| project TimeGenerated, Level, Message
+```
+
+**Live console output from a terminal:**
+```bash
+az webapp log tail -g rg-goformosaic-prod -n app-gfm-prrfxf3r
+```
+
 ## Operational notes
 - **Hosting:** the web app and the function app share one Linux P0v3 plan, which allows identity-based storage with no account keys.
 - **Postgres:** Burstable B1ms with 7-day backups, reachable from Azure services only, TLS required. For stricter isolation, move to VNet integration with private endpoints.

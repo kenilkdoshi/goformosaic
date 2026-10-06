@@ -15,6 +15,7 @@ export type UploadItem = {
   thumbFailed: boolean;
   status: UploadStatus;
   progress: number;
+  attempts: number;
   error?: string;
   fileId?: string;
 };
@@ -55,6 +56,21 @@ async function validateLocal(kind: Kind, file: File): Promise<string | null> {
   return null;
 }
 
+/** Fire-and-forget report so browser-side failures show up in the server logs (no personal data). */
+function reportUploadError(details: {
+  stage: "register" | "upload" | "verify";
+  message: string;
+  kind: Kind;
+  size: number;
+  type: string;
+  attempt: number;
+}) {
+  const body = JSON.stringify({ ...details, message: details.message.slice(0, 300), online: navigator.onLine });
+  void fetch("/api/client-errors", { method: "POST", headers: { "content-type": "application/json" }, body, keepalive: true }).catch(
+    () => {},
+  );
+}
+
 let counter = 0;
 const nextId = () => `u${Date.now().toString(36)}${(counter++).toString(36)}`;
 
@@ -73,6 +89,7 @@ export function useUploads(session: Session | null) {
     async (item: UploadItem) => {
       if (!session) return;
       patch(item.localId, { status: "uploading", progress: 0, error: undefined });
+      let stage: "register" | "upload" | "verify" = "register";
       try {
         const reg = await api<{ fileId: string; uploadUrl: string; contentType: string }>(
           `/api/submissions/${session.id}/files`,
@@ -83,17 +100,21 @@ export function useUploads(session: Session | null) {
           },
         );
         patch(item.localId, { fileId: reg.fileId });
+        stage = "upload";
         const put = putBlob(reg.uploadUrl, item.file, reg.contentType, (progress) => patch(item.localId, { progress }));
         aborts.current.set(item.localId, put.abort);
         await put.promise;
         aborts.current.delete(item.localId);
         patch(item.localId, { status: "verifying", progress: 1 });
+        stage = "verify";
         await api(`/api/submissions/${session.id}/files/${reg.fileId}/complete`, { method: "POST", session });
         patch(item.localId, { status: "done" });
       } catch (err) {
         aborts.current.delete(item.localId);
         if (err instanceof DOMException && err.name === "AbortError") return;
-        patch(item.localId, { status: "error", error: err instanceof Error ? err.message : "Upload failed." });
+        const message = err instanceof Error ? err.message : "Upload failed.";
+        patch(item.localId, { status: "error", error: message });
+        reportUploadError({ stage, message, kind: item.kind, size: item.file.size, type: item.file.type, attempt: item.attempts });
       }
     },
     [session, patch],
@@ -143,7 +164,7 @@ export function useUploads(session: Session | null) {
           if (i.localId !== localId) return i;
           deleteRemote(i.fileId);
           started.current.delete(localId);
-          return { ...i, status: "queued", progress: 0, error: undefined, fileId: undefined };
+          return { ...i, status: "queued", progress: 0, error: undefined, fileId: undefined, attempts: i.attempts + 1 };
         }),
       );
     },
@@ -171,7 +192,16 @@ export function useUploads(session: Session | null) {
           );
           break;
         }
-        accepted.push({ localId: nextId(), kind, file, thumbUrl: null, thumbFailed: false, status: "queued", progress: 0 });
+        accepted.push({
+          localId: nextId(),
+          kind,
+          file,
+          thumbUrl: null,
+          thumbFailed: false,
+          status: "queued",
+          progress: 0,
+          attempts: 1,
+        });
       }
       setRejections(errors);
       if (!accepted.length) return;

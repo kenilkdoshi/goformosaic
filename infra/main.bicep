@@ -456,6 +456,17 @@ resource webSettings 'Microsoft.Web/sites/config@2023-12-01' = {
 
 // App Service Authentication (Easy Auth): anonymous access to the public site, Entra sign-in for
 // /admin (redirect issued by src/proxy.ts), restricted to the single admin object ID.
+resource webLogging 'Microsoft.Web/sites/config@2023-12-01' = {
+  parent: web
+  name: 'logs'
+  properties: {
+    applicationLogs: { fileSystem: { level: 'Information' } }
+    httpLogs: { fileSystem: { enabled: true, retentionInDays: 7, retentionInMb: 35 } }
+    detailedErrorMessages: { enabled: true }
+    failedRequestsTracing: { enabled: false }
+  }
+}
+
 resource webAuth 'Microsoft.Web/sites/config@2023-12-01' = if (useEntraAuth) {
   parent: web
   name: 'authsettingsV2'
@@ -528,6 +539,46 @@ resource funcSettings 'Microsoft.Web/sites/config@2023-12-01' = {
     DRAFT_TTL_HOURS: '24'
   }
   dependsOn: [funcKvRole, funcBlobRole, funcQueueRole]
+}
+
+// ---------------------------------------------------------------------------
+// Diagnostics → Log Analytics: every HTTP request, console output and storage call
+// ---------------------------------------------------------------------------
+resource webDiagnostics 'Microsoft.Insights/diagnosticSettings@2021-05-01-preview' = {
+  scope: web
+  name: 'to-log-analytics'
+  properties: {
+    workspaceId: logs.id
+    logs: [
+      { category: 'AppServiceHTTPLogs', enabled: true }
+      { category: 'AppServiceConsoleLogs', enabled: true }
+      { category: 'AppServiceAppLogs', enabled: true }
+      { category: 'AppServicePlatformLogs', enabled: true }
+    ]
+  }
+}
+
+resource funcDiagnostics 'Microsoft.Insights/diagnosticSettings@2021-05-01-preview' = {
+  scope: functionApp
+  name: 'to-log-analytics'
+  properties: {
+    workspaceId: logs.id
+    logs: [{ category: 'FunctionAppLogs', enabled: true }]
+  }
+}
+
+// Browser uploads go straight to Blob Storage, so this is the only place their failures show up.
+resource blobDiagnostics 'Microsoft.Insights/diagnosticSettings@2021-05-01-preview' = {
+  scope: blobService
+  name: 'to-log-analytics'
+  properties: {
+    workspaceId: logs.id
+    logs: [
+      { category: 'StorageRead', enabled: true }
+      { category: 'StorageWrite', enabled: true }
+      { category: 'StorageDelete', enabled: true }
+    ]
+  }
 }
 
 // ---------------------------------------------------------------------------

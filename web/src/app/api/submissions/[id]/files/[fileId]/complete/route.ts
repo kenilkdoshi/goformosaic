@@ -18,9 +18,13 @@ export async function POST(req: Request, { params }: Ctx) {
   if (file.status === "UPLOADED") return NextResponse.json({ ok: true });
 
   const blob = await readBlobHead(file.rawPath);
-  if (!blob) return jsonError(400, "Upload didn't reach storage. Please retry.");
+  if (!blob) {
+    console.warn(`[upload-missing] file=${file.id} kind=${file.kind} — /complete called but blob not found`);
+    return jsonError(400, "Upload didn't reach storage. Please retry.");
+  }
 
   const reject = async (message: string) => {
+    console.warn(`[upload-rejected] file=${file.id} kind=${file.kind} declared=${file.sizeBytes} actual=${blob.size} reason="${message}"`);
     await deleteBlob(file.rawPath);
     await prisma.uploadFile.delete({ where: { id: file.id } });
     return jsonError(422, message);
