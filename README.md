@@ -1,6 +1,6 @@
 # GoForMosaic
 
-Public web app for **goformosaic.com**. Customers upload a base photo and 20–40 tile photos, and the admin creates the mosaic and emails a watermarked preview. Everything runs on Azure **Canada Central**.
+Public web app for **goformosaic.com**. Customers upload a base photo and 20–40 tile photos, and the admin creates the mosaic and emails a watermarked preview. Everything runs on Azure in Canada: **Canada East** by default, because Free Trial subscriptions have no App Service quota in Canada Central. Set `AZURE_LOCATION=canadacentral` once you have quota there.
 
 ```
 Browser ──(SAS PUT, direct)──────────────────────► Blob Storage (private)

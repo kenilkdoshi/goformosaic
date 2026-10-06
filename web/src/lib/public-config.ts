@@ -13,5 +13,6 @@ export function siteSettings() {
     privacyEmail: process.env.PRIVACY_CONTACT_EMAIL || "privacy@goformosaic.com",
     retentionDays: Number(process.env.RETENTION_DAYS || 90),
     turnstileSiteKey: process.env.TURNSTILE_SITE_KEY || "",
+    dataRegion: process.env.DATA_REGION || "Canada East region (Quebec City, Quebec)",
   };
 }

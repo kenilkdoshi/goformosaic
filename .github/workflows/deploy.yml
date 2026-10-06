@@ -118,8 +118,8 @@ jobs:
           RULE="gha-${GITHUB_RUN_ID}"
           SERVER=$(az postgres flexible-server list -g "$RESOURCE_GROUP" --query "[0].name" -o tsv)
           KV=$(az keyvault list -g "$RESOURCE_GROUP" --query "[0].name" -o tsv)
-          az postgres flexible-server firewall-rule create -g "$RESOURCE_GROUP" -n "$SERVER" \
-            --rule-name "$RULE" --start-ip-address "$IP" --end-ip-address "$IP" -o none
+          az postgres flexible-server firewall-rule create -g "$RESOURCE_GROUP" --server-name "$SERVER" \
+            --name "$RULE" --start-ip-address "$IP" --end-ip-address "$IP" -o none
           echo "server=$SERVER" >> "$GITHUB_OUTPUT"
           echo "rule=$RULE" >> "$GITHUB_OUTPUT"
           DB_URL=$(az keyvault secret show --vault-name "$KV" -n database-url --query value -o tsv)
@@ -130,8 +130,8 @@ jobs:
       - name: Close Postgres firewall
         if: always() && steps.fw.outputs.rule != ''
         run: |
-          az postgres flexible-server firewall-rule delete -g "$RESOURCE_GROUP" -n "${{ steps.fw.outputs.server }}" \
-            --rule-name "${{ steps.fw.outputs.rule }}" --yes -o none
+          az postgres flexible-server firewall-rule delete -g "$RESOURCE_GROUP" --server-name "${{ steps.fw.outputs.server }}" \
+            --name "${{ steps.fw.outputs.rule }}" --yes -o none
 
   deploy-web:
     needs: [migrate]

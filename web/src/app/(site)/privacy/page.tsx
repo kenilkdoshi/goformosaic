@@ -18,7 +18,7 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 }
 
 export default function PrivacyPage() {
-  const { privacyEmail: PRIVACY_CONTACT_EMAIL, retentionDays: RETENTION_DAYS } = siteSettings();
+  const { privacyEmail: PRIVACY_CONTACT_EMAIL, retentionDays: RETENTION_DAYS, dataRegion } = siteSettings();
   const mail = (
     <a href={`mailto:${PRIVACY_CONTACT_EMAIL}`} className="font-medium text-brand-700 underline">
       {PRIVACY_CONTACT_EMAIL}
@@ -93,8 +93,8 @@ export default function PrivacyPage() {
 
       <Section title="5. Where your information is stored">
         <p>
-          Your information and photos are stored on Microsoft Azure servers in the <strong>Canada Central</strong>{" "}
-          region (Toronto, Ontario). Photos are stored in private, encrypted storage that is not publicly accessible.
+          Your information and photos are stored on Microsoft Azure servers in Canada, in the{" "}
+          <strong>{dataRegion}</strong>. Photos are stored in private, encrypted storage that is not publicly accessible.
         </p>
         <p>
           We use a small number of service providers who process information on our behalf under contractual

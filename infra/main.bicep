@@ -6,6 +6,9 @@ targetScope = 'resourceGroup'
 @description('Azure region for all regional resources. Keep in Canada for PIPEDA data residency.')
 param location string = 'canadacentral'
 
+@description('Region for PostgreSQL. Defaults to the main region; can differ when a subscription is restricted (keep it in Canada).')
+param postgresLocation string = location
+
 @description('Short prefix used in resource names.')
 @maxLength(10)
 param appName string = 'gfm'
@@ -101,6 +104,14 @@ var processingQueue = 'image-processing'
 var defaultWebUrl = 'https://${names.web}.azurewebsites.net'
 var effectiveSiteUrl = empty(siteUrl) ? defaultWebUrl : siteUrl
 var useEntraAuth = !empty(entraClientId)
+// Shown in the Privacy Policy so the stated storage location always matches the deployment.
+var regionLabels = {
+  canadacentral: 'Canada Central region (Toronto, Ontario)'
+  canadaeast: 'Canada East region (Quebec City, Quebec)'
+}
+var dataRegionLabel = postgresLocation == location
+  ? regionLabels[?location] ?? location
+  : '${regionLabels[?location] ?? location} and the ${regionLabels[?postgresLocation] ?? postgresLocation}'
 var useCustomEmailDomain = !empty(emailCustomDomain) && emailCustomDomainVerified
 
 // Built-in role definition IDs
@@ -245,7 +256,7 @@ resource lifecycle 'Microsoft.Storage/storageAccounts/managementPolicies@2023-05
 // ---------------------------------------------------------------------------
 resource postgres 'Microsoft.DBforPostgreSQL/flexibleServers@2024-08-01' = {
   name: names.postgres
-  location: location
+  location: postgresLocation
   tags: tags
   sku: { name: 'Standard_B1ms', tier: 'Burstable' }
   properties: {
@@ -428,6 +439,7 @@ resource webSettings 'Microsoft.Web/sites/config@2023-12-01' = {
       TURNSTILE_SITE_KEY: turnstileSiteKey
       RETENTION_DAYS: string(retentionDays)
       PRIVACY_CONTACT_EMAIL: privacyContactEmail
+      DATA_REGION: dataRegionLabel
       STORAGE_ACCOUNT_NAME: storage.name
       UPLOADS_CONTAINER: uploadsContainer
       PROCESSING_QUEUE: processingQueue
