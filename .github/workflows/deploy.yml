@@ -1,0 +1,180 @@
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      deploy_infra:
+        description: Run the Bicep deployment first
+        type: boolean
+        default: false
+
+permissions:
+  id-token: write # OIDC federation with Entra ID — no stored Azure credentials
+  contents: read
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+env:
+  RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
+
+jobs:
+  infra:
+    if: github.event_name == 'workflow_dispatch' && inputs.deploy_infra
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      - name: Deploy Bicep
+        env:
+          SITE_URL: ${{ vars.SITE_URL }}
+          ADMIN_OBJECT_ID: ${{ vars.ADMIN_OBJECT_ID }}
+          ADMIN_NOTIFY_EMAIL: ${{ vars.ADMIN_NOTIFY_EMAIL }}
+          BOOKING_URL: ${{ vars.BOOKING_URL }}
+          PRIVACY_CONTACT_EMAIL: ${{ vars.PRIVACY_CONTACT_EMAIL }}
+          EMAIL_CUSTOM_DOMAIN: ${{ vars.EMAIL_CUSTOM_DOMAIN }}
+          EMAIL_CUSTOM_DOMAIN_VERIFIED: ${{ vars.EMAIL_CUSTOM_DOMAIN_VERIFIED || 'false' }}
+          TURNSTILE_SITE_KEY: ${{ vars.TURNSTILE_SITE_KEY }}
+          ENTRA_CLIENT_ID: ${{ vars.ENTRA_CLIENT_ID }}
+          DEPLOYER_PRINCIPAL_ID: ${{ vars.DEPLOYER_PRINCIPAL_ID }}
+          TURNSTILE_SECRET_KEY: ${{ secrets.TURNSTILE_SECRET_KEY }}
+          ENTRA_CLIENT_SECRET: ${{ secrets.ENTRA_CLIENT_SECRET }}
+          POSTGRES_ADMIN_PASSWORD: ${{ secrets.POSTGRES_ADMIN_PASSWORD }}
+        run: |
+          az deployment group create \
+            --resource-group "$RESOURCE_GROUP" \
+            --name "gfm-${GITHUB_RUN_NUMBER}" \
+            --template-file infra/main.bicep \
+            --parameters infra/main.bicepparam
+
+  build-web:
+    needs: [infra]
+    if: always() && (needs.infra.result == 'success' || needs.infra.result == 'skipped')
+    runs-on: ubuntu-latest
+    defaults: { run: { working-directory: web } }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm, cache-dependency-path: web/package-lock.json }
+      - run: npm ci
+      - run: npm test
+      - run: npm run build
+      - name: Assemble standalone package
+        run: |
+          cp -r public .next/standalone/
+          mkdir -p .next/standalone/.next
+          cp -r .next/static .next/standalone/.next/
+          cd .next/standalone && zip -qr ../../web.zip .
+      - uses: actions/upload-artifact@v4
+        with: { name: web, path: web/web.zip, retention-days: 7 }
+
+  build-functions:
+    needs: [infra]
+    if: always() && (needs.infra.result == 'success' || needs.infra.result == 'skipped')
+    runs-on: ubuntu-latest
+    defaults: { run: { working-directory: functions } }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm, cache-dependency-path: functions/package-lock.json }
+      - run: npm ci
+      - run: npm test
+      - run: npm run build
+      - name: Package (prod deps only, linux-x64 sharp binaries)
+        run: |
+          npm prune --omit=dev
+          zip -qr ../functions.zip host.json package.json dist node_modules
+      - uses: actions/upload-artifact@v4
+        with: { name: functions, path: functions.zip, retention-days: 7 }
+
+  migrate:
+    needs: [build-web]
+    if: always() && needs.build-web.result == 'success'
+    runs-on: ubuntu-latest
+    environment: production
+    defaults: { run: { working-directory: web } }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm, cache-dependency-path: web/package-lock.json }
+      - run: npm ci
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      - name: Open Postgres firewall for this runner
+        id: fw
+        run: |
+          IP=$(curl -fsS https://api.ipify.org)
+          RULE="gha-${GITHUB_RUN_ID}"
+          SERVER=$(az postgres flexible-server list -g "$RESOURCE_GROUP" --query "[0].name" -o tsv)
+          KV=$(az keyvault list -g "$RESOURCE_GROUP" --query "[0].name" -o tsv)
+          az postgres flexible-server firewall-rule create -g "$RESOURCE_GROUP" -n "$SERVER" \
+            --rule-name "$RULE" --start-ip-address "$IP" --end-ip-address "$IP" -o none
+          echo "server=$SERVER" >> "$GITHUB_OUTPUT"
+          echo "rule=$RULE" >> "$GITHUB_OUTPUT"
+          DB_URL=$(az keyvault secret show --vault-name "$KV" -n database-url --query value -o tsv)
+          echo "::add-mask::$DB_URL"
+          echo "DATABASE_URL=$DB_URL" >> "$GITHUB_ENV"
+      - name: prisma migrate deploy
+        run: npx prisma migrate deploy
+      - name: Close Postgres firewall
+        if: always() && steps.fw.outputs.rule != ''
+        run: |
+          az postgres flexible-server firewall-rule delete -g "$RESOURCE_GROUP" -n "${{ steps.fw.outputs.server }}" \
+            --rule-name "${{ steps.fw.outputs.rule }}" --yes -o none
+
+  deploy-web:
+    needs: [migrate]
+    if: always() && needs.migrate.result == 'success'
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/download-artifact@v4
+        with: { name: web }
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      - name: Resolve app name
+        run: echo "WEB_APP=$(az webapp list -g "$RESOURCE_GROUP" --query "[?starts_with(name,'app-')].name | [0]" -o tsv)" >> "$GITHUB_ENV"
+      - uses: azure/webapps-deploy@v3
+        with:
+          app-name: ${{ env.WEB_APP }}
+          package: web.zip
+      - name: Smoke test
+        run: |
+          HOST=$(az webapp show -g "$RESOURCE_GROUP" -n "$WEB_APP" --query defaultHostName -o tsv)
+          for i in $(seq 1 20); do curl -fsS "https://$HOST/api/health" && exit 0; sleep 15; done; exit 1
+
+  deploy-functions:
+    needs: [build-functions, migrate]
+    if: always() && needs.build-functions.result == 'success' && needs.migrate.result == 'success'
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/download-artifact@v4
+        with: { name: functions }
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      - name: Resolve function app name
+        run: echo "FUNC_APP=$(az functionapp list -g "$RESOURCE_GROUP" --query "[0].name" -o tsv)" >> "$GITHUB_ENV"
+      - uses: azure/functions-action@v1
+        with:
+          app-name: ${{ env.FUNC_APP }}
+          package: functions.zip
+          scm-do-build-during-deployment: false
+          enable-oryx-build: false

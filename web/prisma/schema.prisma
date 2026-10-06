@@ -1,0 +1,103 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum SubmissionStatus {
+  DRAFT // contact details captured, uploads in progress
+  SUBMITTED // customer clicked "Create Mosaic"
+  IN_PROGRESS // admin working on it
+  MOSAIC_READY // mosaic + watermarked preview uploaded
+  EMAIL_SENT // "your mosaic is ready" email sent
+  CLOSED
+}
+
+enum FileKind {
+  BASE
+  TILE
+}
+
+enum FileStatus {
+  PENDING_UPLOAD // SAS issued, waiting for browser PUT
+  UPLOADED // blob present + content sniffed OK
+  PROCESSING // compression function picked it up
+  PROCESSED // compressed copy + thumbnail written
+  FAILED // compression failed (original kept)
+}
+
+model Submission {
+  id                 String           @id @default(cuid())
+  reference          String?          @unique // GFM-YYYY-NNNN, assigned on submit
+  status             SubmissionStatus @default(DRAFT)
+  name               String
+  email              String
+  phone              String
+  draftTokenHash     String? // sha256 of the bearer token the browser uses during the wizard
+  consentPrivacy     Boolean          @default(false)
+  consentVersion     String?
+  consentAt          DateTime?
+  marketingOptIn     Boolean          @default(false)
+  marketingConsentAt DateTime?
+  submittedAt        DateTime?
+  dueAt              DateTime?
+  notes              String           @default("")
+  mosaicPath         String?
+  previewPath        String?
+  emailSentAt        DateTime?
+  createdAt          DateTime         @default(now())
+  updatedAt          DateTime         @updatedAt
+  files              UploadFile[]
+
+  @@index([status, dueAt])
+  @@index([submittedAt])
+  @@index([createdAt])
+}
+
+model UploadFile {
+  id             String     @id @default(cuid())
+  submissionId   String
+  submission     Submission @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+  kind           FileKind
+  originalName   String
+  contentType    String
+  sizeBytes      Int
+  rawPath        String
+  status         FileStatus @default(PENDING_UPLOAD)
+  processedPath  String?
+  processedBytes Int?
+  thumbPath      String?
+  width          Int?
+  height         Int?
+  error          String?
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
+
+  @@index([submissionId, kind])
+}
+
+model ReferenceCounter {
+  year Int @id
+  last Int
+}
+
+model RateLimit {
+  key         String   @id
+  windowStart DateTime
+  count       Int
+}
+
+// PII-free trail of admin actions and retention deletions.
+model AuditLog {
+  id        String   @id @default(cuid())
+  action    String
+  reference String?
+  actor     String
+  detail    Json?
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
+}

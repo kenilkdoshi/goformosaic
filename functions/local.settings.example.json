@@ -1,0 +1,12 @@
+{
+  "IsEncrypted": false,
+  "Values": {
+    "FUNCTIONS_WORKER_RUNTIME": "node",
+    "AzureWebJobsStorage": "UseDevelopmentStorage=true",
+    "STORAGE_CONNECTION_STRING": "UseDevelopmentStorage=true",
+    "UPLOADS_CONTAINER": "uploads",
+    "DATABASE_URL": "postgresql://postgres:postgres@localhost:5432/goformosaic",
+    "RETENTION_DAYS": "90",
+    "DRAFT_TTL_HOURS": "24"
+  }
+}
