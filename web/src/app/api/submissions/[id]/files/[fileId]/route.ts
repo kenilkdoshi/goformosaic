@@ -13,7 +13,8 @@ export async function DELETE(req: Request, { params }: Ctx) {
   const file = await prisma.uploadFile.findFirst({ where: { id: fileId, submissionId: id } });
   if (file) {
     await deleteBlob(file.rawPath);
-    await prisma.uploadFile.delete({ where: { id: file.id } });
+    // deleteMany is idempotent: a repeated DELETE for the same file is a no-op, not a 500.
+    await prisma.uploadFile.deleteMany({ where: { id: file.id } });
   }
   return NextResponse.json({ ok: true });
 }

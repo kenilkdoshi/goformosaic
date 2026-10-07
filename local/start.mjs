@@ -105,7 +105,28 @@ async function waitForPort(port, label) {
   throw new Error(`${label} didn't start on port ${port}`);
 }
 
+async function portInUse(port) {
+  const { connect } = await import("node:net");
+  return new Promise((resolve) => {
+    const s = connect(port, "127.0.0.1", () => (s.end(), resolve(true)));
+    s.on("error", () => resolve(false));
+  });
+}
+
 try {
+  const busy = [];
+  for (const [port, what] of [[PG_PORT, "PostgreSQL"], [10000, "Azurite"], [WEB_PORT, "Next.js"]]) {
+    if (await portInUse(port)) busy.push(`${what} (:${port})`);
+  }
+  if (busy.length) {
+    console.error(`
+  Already in use: ${busy.join(", ")}.
+  Another copy of the local environment is probably running — open ${siteUrl}
+  or stop it (Ctrl+C in its terminal) before starting a new one.
+`);
+    process.exit(1);
+  }
+
   mkdirSync(dataDir, { recursive: true });
 
   for (const dir of [webDir, functionsDir]) {
@@ -152,7 +173,10 @@ try {
   log("Azurite ready (blob :10000, queue :10001)");
 
   // 3. Schema + storage setup
-  log("Applying database migrations…");
+  // Regenerate the Prisma client every start: `migrate deploy` doesn't, and a stale client
+  // rejects any field added to schema.prisma since the last install.
+  log("Generating Prisma client and applying database migrations…");
+  run("npx", ["prisma", "generate"], webDir);
   run("npx", ["prisma", "migrate", "deploy"], webDir);
   run("node", ["scripts/dev-setup.mjs"], webDir);
 
@@ -182,6 +206,6 @@ try {
     Stop: Ctrl+C   ·   Wipe all local data: npm run reset
 `);
 } catch (err) {
-  console.error(err);
+  console.error(err instanceof Error ? err : new Error(`Startup failed: ${JSON.stringify(err)}`));
   await shutdown(1);
 }

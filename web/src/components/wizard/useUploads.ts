@@ -80,6 +80,10 @@ export function useUploads(session: Session | null) {
   const started = useRef(new Set<string>());
   const aborts = useRef(new Map<string, () => void>());
   const thumbQueue = useRef<Promise<void>>(Promise.resolve());
+  const itemsRef = useRef<UploadItem[]>([]);
+  useEffect(() => {
+    itemsRef.current = items;
+  }, [items]);
 
   const patch = useCallback((localId: string, changes: Partial<UploadItem>) => {
     setItems((prev) => prev.map((i) => (i.localId === localId ? { ...i, ...changes } : i)));
@@ -140,32 +144,35 @@ export function useUploads(session: Session | null) {
     [session],
   );
 
+  // Side effects (network deletes, aborts) run here, outside state updaters: React may call
+  // updaters twice in development, which previously sent duplicate DELETE requests.
   const remove = useCallback(
     (localId: string) => {
-      setItems((prev) => {
-        const item = prev.find((i) => i.localId === localId);
-        if (item) {
-          aborts.current.get(localId)?.();
-          aborts.current.delete(localId);
-          started.current.delete(localId);
-          deleteRemote(item.fileId);
-          if (item.thumbUrl) URL.revokeObjectURL(item.thumbUrl);
-        }
-        return prev.filter((i) => i.localId !== localId);
-      });
+      const item = itemsRef.current.find((i) => i.localId === localId);
+      if (item) {
+        aborts.current.get(localId)?.();
+        aborts.current.delete(localId);
+        started.current.delete(localId);
+        deleteRemote(item.fileId);
+        if (item.thumbUrl) URL.revokeObjectURL(item.thumbUrl);
+      }
+      setItems((prev) => prev.filter((i) => i.localId !== localId));
     },
     [deleteRemote],
   );
 
   const retry = useCallback(
     (localId: string) => {
+      const item = itemsRef.current.find((i) => i.localId === localId);
+      if (!item) return;
+      deleteRemote(item.fileId);
+      started.current.delete(localId);
       setItems((prev) =>
-        prev.map((i) => {
-          if (i.localId !== localId) return i;
-          deleteRemote(i.fileId);
-          started.current.delete(localId);
-          return { ...i, status: "queued", progress: 0, error: undefined, fileId: undefined, attempts: i.attempts + 1 };
-        }),
+        prev.map((i) =>
+          i.localId === localId
+            ? { ...i, status: "queued", progress: 0, error: undefined, fileId: undefined, attempts: i.attempts + 1 }
+            : i,
+        ),
       );
     },
     [deleteRemote],
