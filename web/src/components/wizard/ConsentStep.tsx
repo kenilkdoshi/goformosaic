@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useState } from "react";
 import { CONSENT_VERSION } from "@/lib/public-config";
+import { PRINT_SIZES, type PrintSizeId } from "@/lib/sizes";
 import { api, type Session } from "./api";
 
 export function ConsentStep({
@@ -16,12 +17,21 @@ export function ConsentStep({
   onBack: () => void;
   onDone: (reference: string) => void;
 }) {
+  const [size, setSize] = useState<PrintSizeId | "">(() => {
+    const enabled = PRINT_SIZES.filter((s) => s.enabled);
+    return enabled.length === 1 ? enabled[0].id : "";
+  });
+  const [promoCode, setPromoCode] = useState("");
   const [consent, setConsent] = useState(false);
   const [marketing, setMarketing] = useState(false);
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
   async function submit() {
+    if (!size) {
+      setError("Please choose a size.");
+      return;
+    }
     if (!consent) {
       setError("Please accept the Privacy Policy to continue.");
       return;
@@ -32,7 +42,13 @@ export function ConsentStep({
       const res = await api<{ reference: string }>(`/api/submissions/${session.id}/submit`, {
         method: "POST",
         session,
-        body: JSON.stringify({ consentPrivacy: true, consentVersion: CONSENT_VERSION, marketingOptIn: marketing }),
+        body: JSON.stringify({
+          consentPrivacy: true,
+          consentVersion: CONSENT_VERSION,
+          marketingOptIn: marketing,
+          printSize: size,
+          promoCode,
+        }),
       });
       onDone(res.reference);
     } catch (err) {
@@ -43,6 +59,57 @@ export function ConsentStep({
 
   return (
     <div className="card space-y-5">
+      <fieldset className="space-y-3">
+        <legend className="mb-3 text-xl font-semibold">
+          Choose your size <span className="text-red-600">*</span>
+        </legend>
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+          {PRINT_SIZES.map((s) => (
+            <label
+              key={s.id}
+              className={`flex items-center gap-2 rounded-xl border px-3 py-2.5 text-sm ${
+                !s.enabled
+                  ? "cursor-not-allowed border-stone-200 bg-stone-50 text-stone-400"
+                  : size === s.id
+                    ? "cursor-pointer border-brand-700 bg-brand-100 font-medium"
+                    : "cursor-pointer border-stone-300 hover:border-stone-400"
+              }`}
+            >
+              <input
+                type="radio"
+                name="printSize"
+                value={s.id}
+                className="size-4 shrink-0 accent-brand-700"
+                checked={size === s.id}
+                disabled={!s.enabled}
+                onChange={() => setSize(s.id)}
+              />
+              <span>
+                {s.label}
+                {!s.enabled && <span className="block text-xs">Coming soon</span>}
+              </span>
+            </label>
+          ))}
+        </div>
+      </fieldset>
+
+      <div className="space-y-1.5">
+        <label htmlFor="promoCode" className="block text-sm font-medium">
+          Promo code <span className="font-normal text-stone-500">(optional)</span>
+        </label>
+        <input
+          id="promoCode"
+          name="promoCode"
+          className="input uppercase"
+          autoComplete="off"
+          autoCapitalize="characters"
+          spellCheck={false}
+          maxLength={40}
+          value={promoCode}
+          onChange={(e) => setPromoCode(e.target.value)}
+        />
+      </div>
+
       <h2 className="text-xl font-semibold">Privacy &amp; consent</h2>
       <div className="space-y-2 rounded-xl bg-stone-50 p-4 text-sm text-stone-700">
         <p>
@@ -96,7 +163,7 @@ export function ConsentStep({
         <button type="button" className="btn-secondary sm:w-40" onClick={onBack} disabled={submitting}>
           Back
         </button>
-        <button type="button" className="btn-primary flex-1" onClick={submit} disabled={!consent || submitting}>
+        <button type="button" className="btn-primary flex-1" onClick={submit} disabled={!size || !consent || submitting}>
           {submitting ? "Creating…" : "Create Mosaic"}
         </button>
       </div>

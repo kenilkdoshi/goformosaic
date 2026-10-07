@@ -8,6 +8,7 @@ import { jsonError, parseJson } from "@/lib/http";
 import { CONSENT_VERSION, TURNAROUND_DAYS } from "@/lib/public-config";
 import { nextReference } from "@/lib/reference";
 import { clientIp, rateLimit } from "@/lib/security";
+import { sizeLabel } from "@/lib/sizes";
 import { enqueueProcessing } from "@/lib/storage";
 import { submitSchema } from "@/lib/validation";
 
@@ -60,6 +61,8 @@ export async function POST(req: Request, { params }: Ctx) {
         consentAt: now,
         marketingOptIn: parsed.data.marketingOptIn,
         marketingConsentAt: parsed.data.marketingOptIn ? now : null,
+        printSize: parsed.data.printSize,
+        promoCode: parsed.data.promoCode || null,
       },
     });
   });
@@ -76,6 +79,8 @@ export async function POST(req: Request, { params }: Ctx) {
             reference: updated.reference,
             name: updated.name,
             tileCount: tiles,
+            printSize: sizeLabel(updated.printSize),
+            promoCode: updated.promoCode,
             dueAt,
             adminUrl: `${config.siteUrl}/admin/requests/${id}`,
           }),

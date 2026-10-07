@@ -6,6 +6,7 @@ import { MosaicUploader } from "@/components/admin/MosaicUploader";
 import { prisma } from "@/lib/db";
 import { defaultReadyEmail } from "@/lib/email";
 import { formatBytes } from "@/lib/files";
+import { sizeLabel } from "@/lib/sizes";
 import { STATUS_LABELS, STATUS_STYLES, describeDue, isOverdue } from "@/lib/status";
 import { readSasUrl } from "@/lib/storage";
 
@@ -73,6 +74,11 @@ export default async function RequestDetailPage({ params }: { params: Promise<{ 
             <div><dt className="text-stone-500">Name</dt><dd className="font-medium">{sub.name}</dd></div>
             <div><dt className="text-stone-500">Email</dt><dd><a href={`mailto:${sub.email}`} className="underline">{sub.email}</a></dd></div>
             <div><dt className="text-stone-500">Phone</dt><dd><a href={`tel:${sub.phone}`} className="underline">{sub.phone}</a></dd></div>
+            <div><dt className="text-stone-500">Size</dt><dd className="font-medium">{sizeLabel(sub.printSize)}</dd></div>
+            <div>
+              <dt className="text-stone-500">Promo code</dt>
+              <dd className="font-mono">{sub.promoCode ?? "—"}</dd>
+            </div>
             <div><dt className="text-stone-500">Submitted</dt><dd>{sub.submittedAt ? dateFmt.format(sub.submittedAt) : "—"}</dd></div>
             <div>
               <dt className="text-stone-500">Consent</dt>

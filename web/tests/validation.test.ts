@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { contactSchema } from "@/lib/validation";
+import { contactSchema, submitSchema } from "@/lib/validation";
 import { describeDue, isOverdue } from "@/lib/status";
 import { escapeHtml, textToHtml } from "@/lib/email";
 import { formatReference } from "@/lib/reference";
@@ -47,5 +47,22 @@ describe("formatReference", () => {
   it("pads to four digits", () => {
     expect(formatReference(2026, 7)).toBe("GFM-2026-0007");
     expect(formatReference(2026, 12345)).toBe("GFM-2026-12345");
+  });
+});
+
+describe("submitSchema", () => {
+  const base = { consentPrivacy: true, consentVersion: "v", marketingOptIn: false };
+  it("accepts the enabled size and upper-cases the promo code", () => {
+    const r = submitSchema.parse({ ...base, printSize: "8x10-digital", promoCode: " launch10 " });
+    expect(r.printSize).toBe("8x10-digital");
+    expect(r.promoCode).toBe("LAUNCH10");
+  });
+  it("treats a missing promo code as blank", () => {
+    expect(submitSchema.parse({ ...base, printSize: "8x10-digital" }).promoCode).toBe("");
+  });
+  it("rejects disabled, unknown and missing sizes", () => {
+    expect(submitSchema.safeParse({ ...base, printSize: "24x36" }).success).toBe(false);
+    expect(submitSchema.safeParse({ ...base, printSize: "huge" }).success).toBe(false);
+    expect(submitSchema.safeParse(base).success).toBe(false);
   });
 });

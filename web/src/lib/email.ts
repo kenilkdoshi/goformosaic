@@ -98,12 +98,16 @@ export function adminNotificationEmail(args: {
   reference: string;
   name: string;
   tileCount: number;
+  printSize: string;
+  promoCode: string | null;
   dueAt: Date;
   adminUrl: string;
 }): Omit<OutgoingEmail, "to"> {
   const text = `New mosaic request ${args.reference}
 
 Customer: ${args.name}
+Size: ${args.printSize}
+Promo code: ${args.promoCode ?? "—"}
 Tiles: ${args.tileCount} + 1 base image
 Due: ${dateFmt.format(args.dueAt)}
 

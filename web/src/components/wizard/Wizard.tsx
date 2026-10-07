@@ -10,7 +10,7 @@ import { useUploads } from "./useUploads";
 
 type Step = 1 | 2 | 3 | "done";
 
-const STEPS = ["Your details", "Upload photos", "Confirm"];
+const STEPS = ["Your details", "Upload photos", "Size & confirm"];
 
 export function Wizard({ turnstileSiteKey, retentionDays }: { turnstileSiteKey: string; retentionDays: number }) {
   const [step, setStep] = useState<Step>(1);

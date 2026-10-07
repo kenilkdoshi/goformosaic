@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { PRINT_SIZE_IDS, isSizeEnabled } from "./sizes";
 
 // Accepts common North American and international formats; normalised to digits with optional leading +.
 export function normalizePhone(input: string): string {
@@ -33,6 +34,16 @@ export const submitSchema = z.object({
   consentPrivacy: z.literal(true, { error: "You must accept the Privacy Policy." }),
   consentVersion: z.string().max(40),
   marketingOptIn: z.boolean().default(false),
+  printSize: z
+    .enum(PRINT_SIZE_IDS, { error: "Please choose a size." })
+    .refine(isSizeEnabled, "That size isn't available yet. Please choose another."),
+  promoCode: z
+    .string()
+    .trim()
+    .max(40, "Promo code is too long.")
+    .transform((s) => s.toUpperCase())
+    .optional()
+    .default(""),
 });
 
 export type ContactInput = z.infer<typeof contactSchema>;

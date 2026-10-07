@@ -1,6 +1,7 @@
 import Link from "next/link";
 import type { Prisma } from "@/generated/prisma/client";
 import { prisma } from "@/lib/db";
+import { sizeLabel } from "@/lib/sizes";
 import { ADMIN_STATUSES, OPEN_STATUSES, STATUS_LABELS, STATUS_STYLES, describeDue, isOverdue } from "@/lib/status";
 
 const PAGE_SIZE = 50;
@@ -26,6 +27,7 @@ export default async function AdminListPage({ searchParams }: { searchParams: Se
             { name: { contains: q, mode: "insensitive" } },
             { email: { contains: q, mode: "insensitive" } },
             { phone: { contains: q.replace(/[^\d+]/g, "") || q } },
+            { promoCode: { contains: q, mode: "insensitive" } },
           ],
         }
       : {}),
@@ -43,6 +45,8 @@ export default async function AdminListPage({ searchParams }: { searchParams: Se
         name: true,
         email: true,
         status: true,
+        printSize: true,
+        promoCode: true,
         submittedAt: true,
         dueAt: true,
         _count: { select: { files: true } },
@@ -71,7 +75,7 @@ export default async function AdminListPage({ searchParams }: { searchParams: Se
       )}
 
       <form className="flex flex-col gap-2 sm:flex-row" action="/admin">
-        <input name="q" defaultValue={q} placeholder="Search name, email, phone or GFM-…" className="input sm:flex-1" />
+        <input name="q" defaultValue={q} placeholder="Search name, email, phone, promo or GFM-…" className="input sm:flex-1" />
         <select name="status" defaultValue={status ?? ""} className="input sm:w-48">
           <option value="">All statuses</option>
           {ADMIN_STATUSES.map((s) => (
@@ -92,6 +96,7 @@ export default async function AdminListPage({ searchParams }: { searchParams: Se
             <tr>
               <th className="px-4 py-3">Reference</th>
               <th className="px-4 py-3">Customer</th>
+              <th className="px-4 py-3">Size · Promo</th>
               <th className="px-4 py-3">Submitted</th>
               <th className="px-4 py-3">Deadline</th>
               <th className="px-4 py-3">Status</th>
@@ -100,7 +105,7 @@ export default async function AdminListPage({ searchParams }: { searchParams: Se
           <tbody className="divide-y divide-stone-100">
             {rows.length === 0 && (
               <tr>
-                <td colSpan={5} className="px-4 py-10 text-center text-stone-500">
+                <td colSpan={6}className="px-4 py-10 text-center text-stone-500">
                   No requests found.
                 </td>
               </tr>
@@ -117,6 +122,10 @@ export default async function AdminListPage({ searchParams }: { searchParams: Se
                   <td className="block px-4 md:table-cell md:py-3">
                     <div className="font-medium">{r.name}</div>
                     <div className="text-stone-500">{r.email}</div>
+                  </td>
+                  <td className="block px-4 text-stone-600 md:table-cell md:py-3">
+                    <div>{sizeLabel(r.printSize)}</div>
+                    {r.promoCode && <div className="font-mono text-xs text-stone-500">{r.promoCode}</div>}
                   </td>
                   <td className="hidden px-4 py-3 text-stone-600 md:table-cell">
                     {r.submittedAt ? dateFmt.format(r.submittedAt) : "—"}

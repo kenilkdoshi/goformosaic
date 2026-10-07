@@ -42,7 +42,9 @@ model Submission {
   consentAt          DateTime?
   marketingOptIn     Boolean          @default(false)
   marketingConsentAt DateTime?
-  submittedAt        DateTime?
+  printSize          String? // id from src/lib/sizes.ts, chosen on submit
+  promoCode          String? // as entered by the customer (upper-cased), null if blank
+  submittedAt       DateTime?
   dueAt              DateTime?
   notes              String           @default("")
   mosaicPath         String?
